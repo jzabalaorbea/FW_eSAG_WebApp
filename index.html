@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#121212">
+    <meta name="color-scheme" content="dark">
+    <title>eSAG Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>eSAG Dashboard</h1>
+      </header>
+
+      <main class="main">
+        <button
+          id="connect-btn"
+          class="connect-btn"
+          type="button"
+          aria-pressed="false"
+        >
+          Conectar Sensor
+        </button>
+
+        <section
+          id="telemetry-console"
+          class="console"
+          aria-label="Datos de telemetría"
+        ></section>
+      </main>
+
+      <footer class="status-bar">
+        <p id="status" class="status" role="status">Desconectado</p>
+      </footer>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
