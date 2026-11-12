@@ -24,15 +24,165 @@
           Conectar Sensor
         </button>
 
-        <section
-          id="telemetry-console"
-          class="console"
-          aria-label="Datos de telemetría"
-        ></section>
+        <div class="controls" role="group" aria-label="Control del sensor">
+          <button id="zero-btn" class="control-btn" type="button" disabled>Fijar Cero SAG</button>
+          <button id="calibrate-btn" class="control-btn" type="button" disabled>Calibrar IMU</button>
+          <button id="reset-peak-btn" class="control-btn" type="button">Reset Peak</button>
+        </div>
+        <p id="cal-notice" class="cal-notice" role="status" hidden>Calibrando IMU... No mover</p>
+
+        <div class="dashboard">
+          <article class="card" aria-labelledby="suspension-title">
+            <h2 id="suspension-title">Suspensión (Sensor Magnético)</h2>
+
+            <div class="sag-hero">
+              <div class="sag-stat">
+                <p class="sag-value">
+                  <span id="sag-percent" class="sag-number">0.0</span><span class="unit">%</span>
+                </p>
+                <p class="sag-caption">Recorrido / SAG</p>
+              </div>
+              <div class="sag-stat">
+                <p class="sag-value">
+                  <span id="sag-mm" class="sag-number">0.0</span><span class="unit">mm</span>
+                </p>
+                <p class="sag-caption">Compresión actual</p>
+              </div>
+            </div>
+
+            <div
+              id="travel-bar"
+              class="travel-bar"
+              role="meter"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              aria-label="Porcentaje de recorrido"
+            >
+              <span id="travel-fill" class="travel-fill" data-band="low"></span>
+            </div>
+
+            <div class="submetrics">
+              <div class="metric metric-peak">
+                <span class="metric-label">Pico máximo (Peak)</span>
+                <span id="peak-value" class="metric-value">0.0 % / 0.0 mm</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Ángulo relativo</span>
+                <span class="metric-value">
+                  <span id="rel-angle">0.00</span><span class="unit">°</span>
+                </span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Ángulo absoluto</span>
+                <span class="metric-value">
+                  <span id="abs-angle">0.00</span><span class="unit">°</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="segment" role="group" aria-label="Ventana de promediado en muestras">
+              <button class="segment-btn" type="button" data-window="10" aria-pressed="false">10</button>
+              <button class="segment-btn" type="button" data-window="50" aria-pressed="true">50</button>
+              <button class="segment-btn" type="button" data-window="100" aria-pressed="false">100</button>
+            </div>
+            <p class="segment-caption">muestras</p>
+
+            <details class="settings" id="suspension-settings">
+              <summary>Parámetros de Suspensión</summary>
+              <div class="settings-body">
+                <label>
+                  Recorrido amortiguador trasero (mm)
+                  <input
+                    id="shock-travel"
+                    type="number"
+                    inputmode="decimal"
+                    min="1"
+                    max="400"
+                    step="1"
+                    value="60"
+                    data-setting="shockTravelMm"
+                    autocomplete="off"
+                  >
+                </label>
+                <label>
+                  Recorrido horquilla (mm)
+                  <input
+                    id="fork-travel"
+                    type="number"
+                    inputmode="decimal"
+                    min="1"
+                    max="400"
+                    step="1"
+                    value="160"
+                    data-setting="forkTravelMm"
+                    autocomplete="off"
+                  >
+                </label>
+                <label>
+                  Ángulo a tope de carrera (°)
+                  <input
+                    id="max-angle"
+                    type="number"
+                    inputmode="decimal"
+                    min="0.1"
+                    max="180"
+                    step="0.1"
+                    value="45"
+                    data-setting="maxAngleDeg"
+                    autocomplete="off"
+                  >
+                </label>
+                <div class="segment" role="group" aria-label="Elemento medido">
+                  <button class="segment-btn" type="button" data-element="shock" aria-pressed="true">Amortiguador</button>
+                  <button class="segment-btn" type="button" data-element="fork" aria-pressed="false">Horquilla</button>
+                </div>
+              </div>
+            </details>
+          </article>
+
+          <article class="card" aria-labelledby="imu-title">
+            <h2 id="imu-title">Dinámica del Cuadro (IMU)</h2>
+
+            <div class="imu-grid">
+              <div class="metric">
+                <span class="metric-label">Pendiente (Pitch)</span>
+                <span class="metric-value">
+                  <span id="pitch">0.00</span><span class="unit">°</span>
+                </span>
+                <span id="pitch-grade" class="metric-sub">0.0 %</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Inclinación lateral (Roll)</span>
+                <span class="metric-value">
+                  <span id="roll">0.00</span><span class="unit">°</span>
+                </span>
+                <span id="roll-side" class="metric-sub is-muted">—</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Gyro Z (Giro)</span>
+                <span class="metric-value">
+                  <span id="gyro-z">0</span><span class="unit">°/s</span>
+                </span>
+              </div>
+              <div class="metric" id="acc-metric">
+                <span class="metric-label">Aceleración |a|</span>
+                <span class="metric-value">
+                  <span id="acc-mag">1.00</span><span class="unit">g</span>
+                </span>
+                <span id="acc-flag" class="alert-flag" hidden>Caída libre</span>
+              </div>
+            </div>
+          </article>
+        </div>
       </main>
 
       <footer class="status-bar">
         <p id="status" class="status" role="status">Desconectado</p>
+        <p class="rate">
+          <span id="live-dot" class="live-dot" aria-hidden="true"></span>
+          <span id="packet-hz">0 Hz</span>
+        </p>
       </footer>
     </div>
 
