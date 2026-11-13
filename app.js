@@ -4,6 +4,8 @@ const FREEFALL_G = 0.25;
 const LIVE_WINDOW_MS = 400;
 const RATE_WINDOW_MS = 1000;
 const CALIBRATION_HOLD_MS = 2200;
+const RANGE_NOTICE_MS = 2000;
+const MAG_RANGE_KEY = "esag_mag_range";
 const SETTINGS_KEY = "esag-suspension-settings";
 
 const CHARACTERISTICS = {
@@ -13,6 +15,13 @@ const CHARACTERISTICS = {
   imu: "beb5483e-36e1-4688-b7f5-ea07361b26ab",
   command: "beb5483e-36e1-4688-b7f5-ea07361b26ac",
 };
+
+const OTA_SERVICE_UUID = "fb1e4001-54ae-4a28-9f74-dfccb248601d";
+const OTA_CONTROL_UUID = "fb1e4002-54ae-4a28-9f74-dfccb248601d";
+const OTA_DATA_UUID = "fb1e4003-54ae-4a28-9f74-dfccb248601d";
+const OTA_CHUNK_SIZE = 240;
+const OTA_READY_TIMEOUT_MS = 5000;
+const OTA_OK_TIMEOUT_MS = 30000;
 
 const DEFAULT_SETTINGS = {
   shockTravelMm: 60,
@@ -50,7 +59,13 @@ const liveDotEl = document.getElementById("live-dot");
 const shockTravelInput = document.getElementById("shock-travel");
 const forkTravelInput = document.getElementById("fork-travel");
 const maxAngleInput = document.getElementById("max-angle");
+const otaFileInput = document.getElementById("ota-file-input");
+const otaUploadBtn = document.getElementById("ota-upload-btn");
+const otaProgressEl = document.getElementById("ota-progress");
+const otaProgressFillEl = document.getElementById("ota-progress-fill");
+const otaStatusEl = document.getElementById("ota-status");
 const windowButtons = Array.from(document.querySelectorAll("[data-window]"));
+const rangeButtons = Array.from(document.querySelectorAll("[data-range]"));
 const elementButtons = Array.from(document.querySelectorAll("[data-element]"));
 const settingInputs = [shockTravelInput, forkTravelInput, maxAngleInput];
 
@@ -62,6 +77,12 @@ let gattServer = null;
 
 /** @type {BluetoothRemoteGATTCharacteristic | null} */
 let commandCharacteristic = null;
+
+/** @type {BluetoothRemoteGATTCharacteristic | null} */
+let otaControlCharacteristic = null;
+
+/** @type {BluetoothRemoteGATTCharacteristic | null} */
+let otaDataCharacteristic = null;
 
 /** @type {WakeLockSentinel | null} */
 let screenWakeLock = null;
@@ -78,6 +99,14 @@ let rateWindowStart = performance.now();
 let displayHz = 0;
 let lastImuAt = 0;
 let calibrateTimer = 0;
+let rangeNoticeTimer = 0;
+let otaSupported = false;
+let otaUploading = false;
+let otaRun = 0;
+let otaStatusLocked = false;
+
+/** @type {{ expect: string, resolve: (value: string) => void, reject: (error: Error) => void } | null} */
+let otaWaiter = null;
 let peakRelAngle = 0;
 let suspensionSettings = loadSuspensionSettings();
 
@@ -111,6 +140,7 @@ window.telemetryState = {
 };
 
 applySettingsToForm();
+applyMagneticRangeButtons(loadMagneticRange());
 
 connectBtn.addEventListener("click", onConnectClick);
 zeroBtn.addEventListener("click", onZeroClick);
@@ -122,6 +152,10 @@ for (const button of windowButtons) {
   button.addEventListener("click", onAverageWindowClick);
 }
 
+for (const button of rangeButtons) {
+  button.addEventListener("click", onMagneticRangeClick);
+}
+
 for (const button of elementButtons) {
   button.addEventListener("click", onElementClick);
 }
@@ -131,6 +165,9 @@ for (const input of settingInputs) {
   input.addEventListener("change", onSettingInput);
   input.addEventListener("blur", onSettingBlur);
 }
+
+otaFileInput.addEventListener("change", onOtaFileChange);
+otaUploadBtn.addEventListener("click", onOtaUploadClick);
 
 requestAnimationFrame(renderFrame);
 
@@ -177,6 +214,10 @@ function onAverageWindowClick(event) {
   for (const candidate of windowButtons) {
     candidate.setAttribute("aria-pressed", candidate === button ? "true" : "false");
   }
+}
+
+function onMagneticRangeClick(event) {
+  setMagneticRange(event.currentTarget.dataset.range);
 }
 
 function onElementClick(event) {
@@ -288,6 +329,7 @@ async function connect() {
           services: [SERVICE_UUID],
         },
       ],
+      optionalServices: [OTA_SERVICE_UUID],
     });
 
     bluetoothDevice = device;
@@ -305,9 +347,15 @@ async function connect() {
 
     resetTelemetry();
     await subscribeToTelemetry(service);
+    await bindOtaService();
     await wakeLockPromise;
 
-    setStatus("Conectado al ESP32-C3", "connected");
+    if (rangeNoticeTimer) {
+      statusEl.classList.add("is-connected");
+      statusEl.classList.remove("is-busy");
+    } else {
+      setStatus("Conectado al ESP32-C3", "connected");
+    }
     connectBtn.textContent = "Desconectar";
     connectBtn.classList.add("is-connected");
     connectBtn.setAttribute("aria-pressed", "true");
@@ -372,6 +420,299 @@ async function bindCommand(service) {
   console.log("[eSAG] Obteniendo característica de comando:", CHARACTERISTICS.command);
   commandCharacteristic = await service.getCharacteristic(CHARACTERISTICS.command);
   console.log("[eSAG] Característica de comando lista:", commandCharacteristic.uuid);
+  await setMagneticRange(loadMagneticRange());
+}
+
+async function bindOtaService() {
+  otaSupported = false;
+  otaControlCharacteristic = null;
+  otaDataCharacteristic = null;
+  let control = null;
+
+  try {
+    console.log("[eSAG] Obteniendo servicio OTA:", OTA_SERVICE_UUID);
+    const service = await gattServer.getPrimaryService(OTA_SERVICE_UUID);
+    control = await service.getCharacteristic(OTA_CONTROL_UUID);
+    const data = await service.getCharacteristic(OTA_DATA_UUID);
+    control.addEventListener("characteristicvaluechanged", onOtaControlNotification);
+    activeSubscriptions.push({ characteristic: control, handler: onOtaControlNotification });
+    console.log("[eSAG] Activando notificaciones OTA:", OTA_CONTROL_UUID);
+    await control.startNotifications();
+    otaControlCharacteristic = control;
+    otaDataCharacteristic = data;
+    otaSupported = true;
+    otaStatusLocked = false;
+    setOtaStatus("Esperando archivo...");
+    console.log("[eSAG] Servicio OTA listo.");
+  } catch (error) {
+    console.warn("[eSAG] OTA no habilitado en este firmware:", error);
+    if (control) {
+      control.removeEventListener("characteristicvaluechanged", onOtaControlNotification);
+    }
+    activeSubscriptions = activeSubscriptions.filter((entry) => entry.handler !== onOtaControlNotification);
+    otaControlCharacteristic = null;
+    otaDataCharacteristic = null;
+    otaSupported = false;
+    setOtaStatus("OTA no habilitado en este firmware");
+  }
+
+  refreshOtaControls();
+}
+
+function onOtaFileChange() {
+  otaStatusLocked = false;
+  setOtaProgress(0, otaFileInput.files?.length ? "Esperando archivo..." : "Esperando archivo...");
+  refreshOtaControls();
+}
+
+function onOtaUploadClick() {
+  const file = otaFileInput.files?.[0];
+  if (!file || otaUploadBtn.disabled) {
+    return;
+  }
+
+  uploadFirmwareOTA(file);
+}
+
+function onOtaControlNotification(event) {
+  if (!event.target?.value) {
+    return;
+  }
+
+  const text = textDecoder.decode(event.target.value).replace(/\0/g, "").trim().toUpperCase();
+  console.log("[eSAG] Notificación OTA:", text);
+  if (!otaWaiter) {
+    return;
+  }
+
+  if (text.startsWith("ERR") || text === otaWaiter.expect) {
+    const waiter = otaWaiter;
+    otaWaiter = null;
+    if (text.startsWith("ERR")) {
+      waiter.reject(new Error(text));
+    } else {
+      waiter.resolve(text);
+    }
+  }
+}
+
+async function uploadFirmwareOTA(file) {
+  if (otaUploading || !otaSupported || !otaControlCharacteristic || !otaDataCharacteristic) {
+    return;
+  }
+
+  if (!file.name.toLowerCase().endsWith(".bin")) {
+    setOtaStatus("Selecciona un archivo .bin");
+    return;
+  }
+
+  otaUploading = true;
+  otaStatusLocked = false;
+  const run = ++otaRun;
+  refreshOtaControls();
+  setOtaProgress(0, "Subiendo: 0% (0 / 0 KB)");
+
+  try {
+    const buffer = await file.arrayBuffer();
+    if (run !== otaRun) {
+      return;
+    }
+    if (buffer.byteLength === 0) {
+      throw new Error("El archivo está vacío");
+    }
+
+    const totalKb = formatKb(buffer.byteLength);
+    setOtaProgress(0, `Subiendo: 0% (0 / ${totalKb} KB)`);
+    console.log("[eSAG] OTA BEGIN", buffer.byteLength);
+
+    const readyPromise = waitForOtaSignal("READY", OTA_READY_TIMEOUT_MS);
+    await writeCharacteristic(
+      otaControlCharacteristic,
+      textEncoder.encode(`BEGIN:${buffer.byteLength}`),
+      true
+    );
+    await readyPromise;
+    if (run !== otaRun) {
+      return;
+    }
+
+    let offset = 0;
+    let index = 0;
+    while (offset < buffer.byteLength) {
+      if (run !== otaRun || !bluetoothDevice?.gatt?.connected) {
+        throw new Error("Sensor desconectado");
+      }
+
+      const length = Math.min(OTA_CHUNK_SIZE, buffer.byteLength - offset);
+      const chunk = new Uint8Array(buffer, offset, length);
+      const isLast = offset + length >= buffer.byteLength;
+      await writeCharacteristic(otaDataCharacteristic, chunk, otaChunkNeedsResponse(index, isLast));
+      offset += length;
+      index += 1;
+
+      const percent = Math.floor((offset / buffer.byteLength) * 100);
+      setOtaProgress(percent, `Subiendo: ${percent}% (${formatKb(offset)} / ${totalKb} KB)`);
+    }
+
+    console.log("[eSAG] OTA END");
+    const okPromise = waitForOtaSignal("OK", OTA_OK_TIMEOUT_MS);
+    await writeCharacteristic(otaControlCharacteristic, textEncoder.encode("END"), true);
+    await okPromise;
+
+    otaStatusLocked = true;
+    setOtaProgress(100, "¡Actualización completada! Reiniciando sensor...");
+    console.log("[eSAG] OTA OK. El sensor va a reiniciarse.");
+  } catch (error) {
+    if (run !== otaRun && otaStatusLocked) {
+      return;
+    }
+    console.error("[eSAG] Error OTA:", error);
+    otaStatusLocked = false;
+    const message = error && error.message ? error.message : "Fallo de escritura";
+    setOtaStatus(`Error OTA: ${message}`);
+  } finally {
+    if (run === otaRun) {
+      otaUploading = false;
+      refreshOtaControls();
+    }
+  }
+}
+
+function otaChunkNeedsResponse(index, isLast) {
+  // Grupos de 8 escrituras sin respuesta y la 9.ª con respuesta.
+  // El último bloque también espera respuesta para vaciar la cola antes de END.
+  return isLast || (index + 1) % 9 === 0;
+}
+
+function waitForOtaSignal(expect, timeoutMs) {
+  if (otaWaiter) {
+    otaWaiter.reject(new Error("Señal OTA sustituida"));
+    otaWaiter = null;
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      if (otaWaiter && otaWaiter.expect === expect) {
+        otaWaiter = null;
+        reject(new Error(`Timeout esperando ${expect}`));
+      }
+    }, timeoutMs);
+
+    otaWaiter = {
+      expect,
+      resolve: (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      reject: (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    };
+  });
+}
+
+async function writeCharacteristic(characteristic, value, withResponse) {
+  if (withResponse || typeof characteristic.writeValueWithoutResponse !== "function") {
+    if (typeof characteristic.writeValueWithResponse === "function") {
+      await characteristic.writeValueWithResponse(value);
+    } else {
+      await characteristic.writeValue(value);
+    }
+    return;
+  }
+
+  try {
+    await characteristic.writeValueWithoutResponse(value);
+  } catch (error) {
+    console.warn("[eSAG] Cola BLE llena, reintentando el bloque con respuesta:", error);
+    if (typeof characteristic.writeValueWithResponse === "function") {
+      await characteristic.writeValueWithResponse(value);
+    } else {
+      await characteristic.writeValue(value);
+    }
+  }
+}
+
+function setOtaProgress(percent, text) {
+  const clamped = Math.min(100, Math.max(0, percent));
+  otaProgressFillEl.style.width = `${clamped}%`;
+  otaProgressEl.setAttribute("aria-valuenow", String(clamped));
+  setOtaStatus(text);
+}
+
+function setOtaStatus(text) {
+  otaStatusEl.textContent = text;
+}
+
+function formatKb(bytes) {
+  return String(Math.round(bytes / 1024));
+}
+
+function refreshOtaControls() {
+  const connected = Boolean(bluetoothDevice?.gatt?.connected);
+  const hasFile = Boolean(otaFileInput.files?.length);
+  otaFileInput.disabled = otaUploading || (connected && !otaSupported);
+  otaUploadBtn.disabled = !(otaSupported && connected && hasFile && !otaUploading);
+}
+
+async function setMagneticRange(rangeValue) {
+  const range = normalizeMagneticRange(rangeValue);
+  applyMagneticRangeButtons(range);
+
+  try {
+    localStorage.setItem(MAG_RANGE_KEY, range);
+  } catch (error) {
+    console.warn("[eSAG] No se pudo guardar el rango magnético:", error);
+  }
+
+  if (!commandCharacteristic) {
+    return;
+  }
+
+  const command = `RANGE:${range}`;
+  try {
+    await commandCharacteristic.writeValue(textEncoder.encode(command));
+    console.log("[eSAG] Comando BLE enviado:", command);
+    showRangeNotice(range);
+  } catch (error) {
+    console.error("[eSAG] Error al ajustar el rango magnético:", error);
+  }
+}
+
+function showRangeNotice(range) {
+  setStatus(`Rango ajustado a ±${range} mT`, "connected");
+  window.clearTimeout(rangeNoticeTimer);
+  rangeNoticeTimer = window.setTimeout(() => {
+    rangeNoticeTimer = 0;
+    if (bluetoothDevice?.gatt?.connected) {
+      setStatus("Conectado al ESP32-C3", "connected");
+    }
+  }, RANGE_NOTICE_MS);
+}
+
+function applyMagneticRangeButtons(range) {
+  const selected = normalizeMagneticRange(range);
+  for (const button of rangeButtons) {
+    button.setAttribute("aria-pressed", button.dataset.range === selected ? "true" : "false");
+  }
+}
+
+function loadMagneticRange() {
+  try {
+    return normalizeMagneticRange(localStorage.getItem(MAG_RANGE_KEY));
+  } catch (error) {
+    console.warn("[eSAG] No se pudo leer el rango magnético:", error);
+    return "50";
+  }
+}
+
+function normalizeMagneticRange(rangeValue) {
+  const range = String(rangeValue);
+  if (range === "25" || range === "50" || range === "100") {
+    return range;
+  }
+  return "50";
 }
 
 function onAngleNotification(key, event) {
@@ -457,7 +798,20 @@ function onGattServerDisconnected() {
 function cleanupDevice() {
   window.clearTimeout(calibrateTimer);
   calibrateTimer = 0;
+  window.clearTimeout(rangeNoticeTimer);
+  rangeNoticeTimer = 0;
   calNoticeEl.hidden = true;
+
+  otaRun += 1;
+  otaUploading = false;
+  otaSupported = false;
+  otaControlCharacteristic = null;
+  otaDataCharacteristic = null;
+  if (otaWaiter) {
+    const waiter = otaWaiter;
+    otaWaiter = null;
+    waiter.reject(new Error("Sensor desconectado"));
+  }
 
   for (const { characteristic, handler } of activeSubscriptions) {
     characteristic.removeEventListener("characteristicvaluechanged", handler);
@@ -466,6 +820,10 @@ function cleanupDevice() {
   activeSubscriptions = [];
   commandCharacteristic = null;
   setControlsEnabled(false);
+  if (!otaStatusLocked) {
+    setOtaProgress(0, "Esperando archivo...");
+  }
+  refreshOtaControls();
   releaseWakeLock();
 
   if (bluetoothDevice) {

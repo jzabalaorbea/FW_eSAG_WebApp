@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#121212">
     <meta name="color-scheme" content="dark">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>eSAG Dashboard</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20261113ota">
   </head>
   <body>
     <div class="app">
@@ -79,6 +80,22 @@
                   <span id="abs-angle">0.00</span><span class="unit">°</span>
                 </span>
               </div>
+            </div>
+
+            <p class="field-label" id="mag-range-label">Rango Magnético (Sensibilidad)</p>
+            <div class="segment segment-range" role="group" aria-labelledby="mag-range-label">
+              <button class="segment-btn" type="button" data-range="25" aria-pressed="false">
+                <span>±25 mT</span>
+                <small>Alta resolución</small>
+              </button>
+              <button class="segment-btn" type="button" data-range="50" aria-pressed="true">
+                <span>±50 mT</span>
+                <small>Por defecto</small>
+              </button>
+              <button class="segment-btn" type="button" data-range="100" aria-pressed="false">
+                <span>±100 mT</span>
+                <small>Campo alto</small>
+              </button>
             </div>
 
             <div class="segment" role="group" aria-label="Ventana de promediado en muestras">
@@ -175,6 +192,29 @@
             </div>
           </article>
         </div>
+
+        <details class="ota-panel" id="ota-panel">
+          <summary>Actualización de Firmware (OTA)</summary>
+          <div class="ota-body">
+            <label class="ota-file-label" for="ota-file-input">Firmware (.bin)</label>
+            <input id="ota-file-input" class="ota-file-input" type="file" accept=".bin">
+            <button id="ota-upload-btn" class="control-btn ota-upload" type="button" disabled>
+              Subir Firmware (.bin)
+            </button>
+            <div
+              id="ota-progress"
+              class="ota-progress"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              aria-label="Progreso de la actualización"
+            >
+              <span id="ota-progress-fill" class="ota-progress-fill"></span>
+            </div>
+            <p id="ota-status" class="ota-status">Esperando archivo...</p>
+          </div>
+        </details>
       </main>
 
       <footer class="status-bar">
@@ -186,6 +226,6 @@
       </footer>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=20261113ota"></script>
   </body>
 </html>
