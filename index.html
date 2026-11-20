@@ -7,7 +7,7 @@
     <meta name="color-scheme" content="dark">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>eSAG Dashboard</title>
-    <link rel="stylesheet" href="style.css?v=20261113ota">
+    <link rel="stylesheet" href="style.css?v=20261120viz">
   </head>
   <body>
     <div class="app">
@@ -33,6 +33,151 @@
         <p id="cal-notice" class="cal-notice" role="status" hidden>Calibrando IMU... No mover</p>
 
         <div class="dashboard">
+          <article class="card visual-card" aria-labelledby="visual-title">
+            <h2 id="visual-title">Telemetría Visual del Cuadro</h2>
+            <div class="visual-layout">
+              <figure class="visual-side">
+                <svg
+                  id="bike-side-svg"
+                  class="bike-svg"
+                  viewBox="0 0 520 300"
+                  role="img"
+                  aria-label="Perfil lateral de la e-MTB"
+                >
+                  <g id="svg-ground-group" fill="none" stroke="#e2e8f0" stroke-linecap="round">
+                    <line x1="18" y1="248" x2="502" y2="248" stroke-width="1.6" stroke-opacity="0.7"></line>
+                    <path
+                      stroke-width="1.2"
+                      stroke-opacity="0.35"
+                      d="M42 248 l-9 14 M78 248 l-9 14 M114 248 l-9 14 M150 248 l-9 14 M186 248 l-9 14 M222 248 l-9 14 M258 248 l-9 14 M294 248 l-9 14 M330 248 l-9 14 M366 248 l-9 14 M402 248 l-9 14 M438 248 l-9 14 M474 248 l-9 14"
+                    ></path>
+                  </g>
+
+                  <g id="svg-bike-pitch-group">
+                    <g id="svg-rear-triangle" fill="none" stroke="#e2e8f0" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="132" cy="202" r="46" stroke-width="2.6"></circle>
+                      <circle cx="132" cy="202" r="37" stroke="#94a3b8" stroke-width="1.15"></circle>
+                      <circle cx="132" cy="202" r="15" stroke="#3b82f6" stroke-width="1.4"></circle>
+                      <circle cx="132" cy="202" r="4.5" fill="#3b82f6" stroke="none"></circle>
+                      <path d="M228 156 L132 202" stroke-width="4"></path>
+                      <path d="M146 186 L206 128" stroke-width="3.4"></path>
+                      <path d="M228 156 L236 168 L204 134 Z" stroke="#3b82f6" stroke-width="2" fill="#3b82f6" fill-opacity="0.16"></path>
+                      <circle cx="236" cy="168" r="3.2" fill="#3b82f6" stroke="none"></circle>
+                    </g>
+
+                    <g id="svg-front-triangle" fill="none" stroke="#e2e8f0" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M394 114 C356 142 318 166 270 178" stroke="#94a3b8" stroke-width="14"></path>
+                      <path d="M394 114 C356 142 318 166 270 178" stroke="#334155" stroke-width="8"></path>
+                      <circle cx="262" cy="186" r="19" fill="#121212" stroke="#3b82f6" stroke-width="2.6"></circle>
+                      <circle cx="262" cy="186" r="7" fill="#3b82f6" stroke="none"></circle>
+                      <path d="M372 74 L268 98" stroke-width="3.4"></path>
+                      <path d="M268 98 L258 168" stroke-width="3.6"></path>
+                      <path d="M364 70 L394 116" stroke-width="5.5"></path>
+                      <path d="M258 98 L258 48" stroke-width="3.2"></path>
+                      <path d="M236 48 H280" stroke-width="3.4"></path>
+                      <path d="M280 48 l8 -4" stroke-width="2.6"></path>
+                      <path d="M386 116 L418 202" stroke-width="3.2"></path>
+                      <path d="M402 114 L442 202" stroke-width="3.2"></path>
+                      <circle cx="430" cy="202" r="46" stroke-width="2.6"></circle>
+                      <circle cx="430" cy="202" r="37" stroke="#94a3b8" stroke-width="1.15"></circle>
+                      <circle cx="430" cy="202" r="15" stroke="#3b82f6" stroke-width="1.4"></circle>
+                      <circle cx="430" cy="202" r="4.5" fill="#3b82f6" stroke="none"></circle>
+                    </g>
+
+                    <g id="svg-shock-group" transform="translate(292 124) rotate(142)">
+                      <line x1="34" y1="0" x2="71" y2="0" stroke="#334155" stroke-width="5" stroke-linecap="round"></line>
+                      <line
+                        id="svg-shock-piston"
+                        x1="34"
+                        y1="0"
+                        x2="71"
+                        y2="0"
+                        stroke="#3b82f6"
+                        stroke-width="4"
+                        stroke-linecap="round"
+                      ></line>
+                      <circle id="svg-shock-eye" cx="71" cy="0" r="3.4" fill="#3b82f6" stroke="#e2e8f0" stroke-width="1"></circle>
+                      <g id="svg-sag-zone">
+                        <rect x="59.45" y="-5.5" width="2.8" height="11" fill="#00c853" fill-opacity="0.72"></rect>
+                        <line x1="59.45" y1="-9" x2="59.45" y2="9" stroke="#00c853" stroke-width="1.4"></line>
+                        <line x1="62.25" y1="-9" x2="62.25" y2="9" stroke="#00c853" stroke-width="1.4"></line>
+                        <text x="60.8" y="-20" fill="#00c853" font-size="8" font-weight="700" text-anchor="middle" transform="rotate(-142 60.8 -20)">SAG</text>
+                      </g>
+                      <rect x="2" y="-8" width="32" height="16" rx="5" fill="#121212" stroke="#e2e8f0" stroke-width="2"></rect>
+                      <line x1="12" y1="-8" x2="12" y2="8" stroke="#3b82f6" stroke-width="1.4"></line>
+                      <circle cx="0" cy="0" r="3.4" fill="#3b82f6" stroke="#e2e8f0" stroke-width="1"></circle>
+                    </g>
+
+                    <circle cx="228" cy="156" r="4.6" fill="#3b82f6" stroke="#e2e8f0" stroke-width="1.3"></circle>
+                  </g>
+
+                  <g font-family="system-ui, Segoe UI, sans-serif">
+                    <rect x="14" y="12" width="132" height="68" rx="10" fill="#121212" fill-opacity="0.82" stroke="#2e2e2e"></rect>
+                    <text id="svg-hud-sag" x="26" y="38" fill="#e2e8f0" font-size="18" font-weight="700">0.0 %</text>
+                    <text id="svg-hud-mm" x="26" y="54" fill="#b0b0b0" font-size="12" font-weight="600">0.0 mm</text>
+                    <text id="svg-hud-pitch" x="26" y="70" fill="#b0b0b0" font-size="12" font-weight="600">Pitch 0.00°</text>
+                  </g>
+                </svg>
+                <figcaption class="visual-caption">Perfil lateral</figcaption>
+              </figure>
+
+              <figure class="visual-roll">
+                <svg
+                  id="bike-roll-svg"
+                  class="bike-svg"
+                  viewBox="0 0 220 300"
+                  role="img"
+                  aria-label="Horizonte de inclinación lateral"
+                >
+                  <g fill="none" stroke="#e2e8f0" stroke-linecap="round">
+                    <path d="M69 55 A58 58 0 0 1 151 55" stroke-width="1.6" stroke-opacity="0.85"></path>
+                    <path
+                      stroke-width="1.15"
+                      stroke-opacity="0.85"
+                      d="M74.6 60.6 L63.3 49.3 M85 52.7 L77 38.8 M97.1 47.7 L92.9 32.2 M110 46 L110 30 M122.9 47.7 L127.1 32.2 M135 52.7 L143 38.8 M145.4 60.6 L156.7 49.3"
+                    ></path>
+                    <path
+                      stroke-width="1"
+                      stroke-opacity="0.4"
+                      d="M74 53.1 L67.6 45.4 M77.9 50.1 L72.1 41.9 M86.3 45.2 L82.1 36.2 M90.8 43.4 L87.4 34 M100.3 40.9 L98.5 31 M105.1 40.2 L104.2 30.3 M114.9 40.2 L115.8 30.3 M119.7 40.9 L121.5 31 M129.2 43.4 L132.6 34 M133.7 45.2 L137.9 36.2 M142.1 50.1 L147.9 41.9 M146 53.1 L152.4 45.4"
+                    ></path>
+                  </g>
+                  <g fill="#94a3b8" font-family="system-ui, Segoe UI, sans-serif" font-size="9" font-weight="600" text-anchor="middle">
+                    <text x="54.8" y="40.8">-45</text>
+                    <text x="71" y="28.5">-30</text>
+                    <text x="89.8" y="20.7">-15</text>
+                    <text x="110" y="16">0</text>
+                    <text x="130.2" y="20.7">15</text>
+                    <text x="149" y="28.5">30</text>
+                    <text x="165.2" y="40.8">45</text>
+                  </g>
+                  <line x1="110" y1="30" x2="110" y2="258" stroke="#3b82f6" stroke-width="1.3" stroke-dasharray="3 4"></line>
+                  <line x1="28" y1="258" x2="192" y2="258" stroke="#e2e8f0" stroke-width="1.4" stroke-opacity="0.55"></line>
+
+                  <g id="svg-bike-rear-view" fill="none" stroke="#e2e8f0" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="110" cy="214" r="44" stroke-width="2.6"></circle>
+                    <circle cx="110" cy="214" r="34" stroke="#94a3b8" stroke-width="1.15"></circle>
+                    <circle cx="110" cy="214" r="4.2" fill="#3b82f6" stroke="none"></circle>
+                    <path d="M78 214 H142" stroke-width="3.2"></path>
+                    <path d="M86 210 L110 156 L134 210" stroke-width="2.6"></path>
+                    <path d="M110 156 V128" stroke-width="3.2"></path>
+                    <path d="M98 128 H122" stroke-width="3.4"></path>
+                    <path d="M110 176 V164" stroke="#3b82f6" stroke-width="2.2"></path>
+                    <path d="M76 172 H144" stroke-width="3.6"></path>
+                    <circle cx="76" cy="172" r="3" fill="#3b82f6" stroke="none"></circle>
+                    <circle cx="144" cy="172" r="3" fill="#3b82f6" stroke="none"></circle>
+                  </g>
+
+                  <g font-family="system-ui, Segoe UI, sans-serif" text-anchor="middle">
+                    <text id="svg-hud-roll" x="110" y="280" fill="#e2e8f0" font-size="16" font-weight="700">0.00°</text>
+                    <text id="svg-hud-roll-side" x="110" y="296" fill="#b0b0b0" font-size="12" font-weight="700">—</text>
+                  </g>
+                </svg>
+                <figcaption class="visual-caption">Inclinación lateral</figcaption>
+              </figure>
+            </div>
+          </article>
+
           <article class="card" aria-labelledby="suspension-title">
             <h2 id="suspension-title">Suspensión (Sensor Magnético)</h2>
 
@@ -68,16 +213,26 @@
                 <span class="metric-label">Pico máximo (Peak)</span>
                 <span id="peak-value" class="metric-value">0.0 % / 0.0 mm</span>
               </div>
+              <div class="metric metric-shock">
+                <span class="metric-label">Longitud entre ojos (SHOCK)</span>
+                <span id="shock-length" class="metric-value">205.0 → 205.0 mm</span>
+              </div>
               <div class="metric">
-                <span class="metric-label">Ángulo relativo</span>
+                <span class="metric-label">Δθ</span>
                 <span class="metric-value">
-                  <span id="rel-angle">0.00</span><span class="unit">°</span>
+                  <span id="delta-theta">0.00</span><span class="unit">°</span>
                 </span>
               </div>
               <div class="metric">
                 <span class="metric-label">Ángulo absoluto</span>
                 <span class="metric-value">
                   <span id="abs-angle">0.00</span><span class="unit">°</span>
+                </span>
+              </div>
+              <div class="metric metric-wide">
+                <span class="metric-label">Ángulo relativo</span>
+                <span class="metric-value">
+                  <span id="rel-angle">0.00</span><span class="unit">°</span>
                 </span>
               </div>
             </div>
@@ -108,52 +263,13 @@
             <details class="settings" id="suspension-settings">
               <summary>Parámetros de Suspensión</summary>
               <div class="settings-body">
-                <label>
-                  Recorrido amortiguador trasero (mm)
-                  <input
-                    id="shock-travel"
-                    type="number"
-                    inputmode="decimal"
-                    min="1"
-                    max="400"
-                    step="1"
-                    value="60"
-                    data-setting="shockTravelMm"
-                    autocomplete="off"
-                  >
-                </label>
-                <label>
-                  Recorrido horquilla (mm)
-                  <input
-                    id="fork-travel"
-                    type="number"
-                    inputmode="decimal"
-                    min="1"
-                    max="400"
-                    step="1"
-                    value="160"
-                    data-setting="forkTravelMm"
-                    autocomplete="off"
-                  >
-                </label>
-                <label>
-                  Ángulo a tope de carrera (°)
-                  <input
-                    id="max-angle"
-                    type="number"
-                    inputmode="decimal"
-                    min="0.1"
-                    max="180"
-                    step="0.1"
-                    value="45"
-                    data-setting="maxAngleDeg"
-                    autocomplete="off"
-                  >
-                </label>
-                <div class="segment" role="group" aria-label="Elemento medido">
-                  <button class="segment-btn" type="button" data-element="shock" aria-pressed="true">Amortiguador</button>
-                  <button class="segment-btn" type="button" data-element="fork" aria-pressed="false">Horquilla</button>
-                </div>
+                <label for="bike-model-select">Cuadro</label>
+                <select id="bike-model-select"></select>
+                <label for="sensor-dir-select">Sentido de giro del sensor</label>
+                <select id="sensor-dir-select">
+                  <option value="1">+1 Creciente</option>
+                  <option value="-1">-1 Decreciente</option>
+                </select>
               </div>
             </details>
           </article>
@@ -226,6 +342,7 @@
       </footer>
     </div>
 
-    <script src="app.js?v=20261113ota"></script>
+    <script src="kinematics.js"></script>
+    <script src="app.js?v=20261120viz2"></script>
   </body>
 </html>

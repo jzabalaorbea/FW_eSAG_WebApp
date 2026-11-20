@@ -6,7 +6,8 @@ const RATE_WINDOW_MS = 1000;
 const CALIBRATION_HOLD_MS = 2200;
 const RANGE_NOTICE_MS = 2000;
 const MAG_RANGE_KEY = "esag_mag_range";
-const SETTINGS_KEY = "esag-suspension-settings";
+const BIKE_MODEL_KEY = "esag_bike_model";
+const SENSOR_DIR_KEY = "esag_sensor_dir";
 
 const CHARACTERISTICS = {
   avg10: "beb5483e-36e1-4688-b7f5-ea07361b26a8",
@@ -23,13 +24,6 @@ const OTA_CHUNK_SIZE = 240;
 const OTA_READY_TIMEOUT_MS = 5000;
 const OTA_OK_TIMEOUT_MS = 30000;
 
-const DEFAULT_SETTINGS = {
-  shockTravelMm: 60,
-  forkTravelMm: 160,
-  maxAngleDeg: 45,
-  element: "shock",
-};
-
 const textDecoder = new TextDecoder("utf-8");
 const textEncoder = new TextEncoder();
 
@@ -44,6 +38,8 @@ const sagMmEl = document.getElementById("sag-mm");
 const travelBarEl = document.getElementById("travel-bar");
 const travelFillEl = document.getElementById("travel-fill");
 const peakValueEl = document.getElementById("peak-value");
+const shockLengthEl = document.getElementById("shock-length");
+const deltaThetaEl = document.getElementById("delta-theta");
 const relAngleEl = document.getElementById("rel-angle");
 const absAngleEl = document.getElementById("abs-angle");
 const pitchEl = document.getElementById("pitch");
@@ -56,18 +52,25 @@ const accMetricEl = document.getElementById("acc-metric");
 const accFlagEl = document.getElementById("acc-flag");
 const packetHzEl = document.getElementById("packet-hz");
 const liveDotEl = document.getElementById("live-dot");
-const shockTravelInput = document.getElementById("shock-travel");
-const forkTravelInput = document.getElementById("fork-travel");
-const maxAngleInput = document.getElementById("max-angle");
+const bikeModelSelect = document.getElementById("bike-model-select");
+const sensorDirSelect = document.getElementById("sensor-dir-select");
 const otaFileInput = document.getElementById("ota-file-input");
 const otaUploadBtn = document.getElementById("ota-upload-btn");
 const otaProgressEl = document.getElementById("ota-progress");
 const otaProgressFillEl = document.getElementById("ota-progress-fill");
 const otaStatusEl = document.getElementById("ota-status");
+const svgBikePitchGroup = document.getElementById("svg-bike-pitch-group");
+const svgRearTriangle = document.getElementById("svg-rear-triangle");
+const svgShockPiston = document.getElementById("svg-shock-piston");
+const svgShockEye = document.getElementById("svg-shock-eye");
+const svgBikeRearView = document.getElementById("svg-bike-rear-view");
+const svgHudSag = document.getElementById("svg-hud-sag");
+const svgHudMm = document.getElementById("svg-hud-mm");
+const svgHudPitch = document.getElementById("svg-hud-pitch");
+const svgHudRoll = document.getElementById("svg-hud-roll");
+const svgHudRollSide = document.getElementById("svg-hud-roll-side");
 const windowButtons = Array.from(document.querySelectorAll("[data-window]"));
 const rangeButtons = Array.from(document.querySelectorAll("[data-range]"));
-const elementButtons = Array.from(document.querySelectorAll("[data-element]"));
-const settingInputs = [shockTravelInput, forkTravelInput, maxAngleInput];
 
 /** @type {BluetoothDevice | null} */
 let bluetoothDevice = null;
@@ -107,13 +110,17 @@ let otaStatusLocked = false;
 
 /** @type {{ expect: string, resolve: (value: string) => void, reject: (error: Error) => void } | null} */
 let otaWaiter = null;
-let peakRelAngle = 0;
-let suspensionSettings = loadSuspensionSettings();
+let peakTravelMm = 0;
+let peakPercent = 0;
+let bikeModelKey = loadBikeModel();
+let sensorDirection = loadSensorDirection();
 
 const painted = {
   sagPercent: "",
   sagMm: "",
   peak: "",
+  shock: "",
+  delta: "",
   rel: "",
   abs: "",
   pitch: "",
@@ -128,6 +135,28 @@ const painted = {
   band: "",
   live: false,
   freefall: false,
+  hudSag: "",
+  hudMm: "",
+  hudPitch: "",
+  hudRoll: "",
+  hudSide: "",
+};
+
+const visualPose = {
+  pitch: "",
+  rear: "",
+  shock: "",
+  shockColor: "",
+  roll: "",
+};
+
+const SHOCK_TIP_EXTENDED = 71;
+const SHOCK_TIP_COMPRESSED = 36;
+const SHOCK_COLORS = {
+  low: "#3b82f6",
+  optimal: "#00c853",
+  warn: "#ffb300",
+  bottom: "#ff5252",
 };
 
 const warnedFrames = new Set();
@@ -139,7 +168,7 @@ window.telemetryState = {
   imu: { pitch: null, roll: null, gyroZ: null, accMag: null },
 };
 
-applySettingsToForm();
+applyBikeSettings();
 applyMagneticRangeButtons(loadMagneticRange());
 
 connectBtn.addEventListener("click", onConnectClick);
@@ -156,43 +185,13 @@ for (const button of rangeButtons) {
   button.addEventListener("click", onMagneticRangeClick);
 }
 
-for (const button of elementButtons) {
-  button.addEventListener("click", onElementClick);
-}
-
-for (const input of settingInputs) {
-  input.addEventListener("input", onSettingInput);
-  input.addEventListener("change", onSettingInput);
-  input.addEventListener("blur", onSettingBlur);
-}
+bikeModelSelect.addEventListener("change", onBikeModelChange);
+sensorDirSelect.addEventListener("change", onSensorDirectionChange);
 
 otaFileInput.addEventListener("change", onOtaFileChange);
 otaUploadBtn.addEventListener("click", onOtaUploadClick);
 
 requestAnimationFrame(renderFrame);
-
-/**
- * Convierte el ángulo relativo del sensor en recorrido de suspensión.
- * No lee estado global: la ventana BLE y el elemento medido se pasan ya resueltos.
- *
- * @param {number} relAngleDeg Ángulo relativo respecto al cero de SAG, en grados.
- * @param {number} maxTravelMm Recorrido total del amortiguador o la horquilla, en mm.
- * @param {number} maxAngleDeg Ángulo del sensor con la suspensión a tope de carrera.
- * @returns {{ percent: number, travelMm: number }}
- */
-function computeSuspensionKinematics(relAngleDeg, maxTravelMm, maxAngleDeg) {
-  if (!Number.isFinite(relAngleDeg) || !(maxTravelMm >= 0) || !(maxAngleDeg > 0)) {
-    return { percent: 0, travelMm: 0 };
-  }
-
-  // Punto de sustitución: reemplazar este `ratio` lineal por las ecuaciones
-  // cinemáticas reales de la bieleta (relación instantánea ángulo → recorrido).
-  const ratio = Math.min(Math.max(relAngleDeg / maxAngleDeg, 0), 1);
-  return {
-    percent: ratio * 100,
-    travelMm: ratio * maxTravelMm,
-  };
-}
 
 async function onConnectClick() {
   if (connectInFlight) {
@@ -220,34 +219,17 @@ function onMagneticRangeClick(event) {
   setMagneticRange(event.currentTarget.dataset.range);
 }
 
-function onElementClick(event) {
-  const button = event.currentTarget;
-  suspensionSettings.element = button.dataset.element === "fork" ? "fork" : "shock";
-  saveSuspensionSettings();
-
-  for (const candidate of elementButtons) {
-    candidate.setAttribute("aria-pressed", candidate === button ? "true" : "false");
-  }
+function onBikeModelChange() {
+  const next = bikeModelSelect.value;
+  bikeModelKey = window.BIKE_KINEMATICS[next] ? next : "WILD_S";
+  saveBikeSettings();
+  resetPeak();
 }
 
-function onSettingInput(event) {
-  const input = event.currentTarget;
-  const value = Number(input.value);
-  if (!Number.isFinite(value) || value <= 0) {
-    return;
-  }
-
-  suspensionSettings[input.dataset.setting] = value;
-  saveSuspensionSettings();
-}
-
-function onSettingBlur(event) {
-  const input = event.currentTarget;
-  const key = input.dataset.setting;
-  const value = Number(input.value);
-  if (!Number.isFinite(value) || value <= 0) {
-    input.value = String(suspensionSettings[key]);
-  }
+function onSensorDirectionChange() {
+  sensorDirection = Number(sensorDirSelect.value) === -1 ? -1 : 1;
+  saveBikeSettings();
+  resetPeak();
 }
 
 async function onZeroClick() {
@@ -856,12 +838,14 @@ function resetTelemetry() {
 }
 
 function resetPeak() {
-  peakRelAngle = 0;
+  peakTravelMm = 0;
+  peakPercent = 0;
 }
 
-function rememberPeak(relAngleDeg) {
-  if (relAngleDeg > peakRelAngle) {
-    peakRelAngle = relAngleDeg;
+function rememberPeak(result) {
+  if (result.travelMm > peakTravelMm) {
+    peakTravelMm = result.travelMm;
+    peakPercent = result.percent;
   }
 }
 
@@ -915,29 +899,29 @@ function renderFrame(now) {
 
   const sample = window.telemetryState[`avg${averageWindow}`] || { abs: null, rel: null };
   const imu = window.telemetryState.imu;
-  const travelMm = activeTravelMm();
   const hasAngle = sample.rel != null && Number.isFinite(sample.rel);
   const kinematics = hasAngle
-    ? computeSuspensionKinematics(sample.rel, travelMm, suspensionSettings.maxAngleDeg)
-    : { percent: 0, travelMm: 0 };
+    ? window.interpolateRearShock(sample.rel, bikeModelKey, sensorDirection)
+    : extendedShock();
 
   if (hasAngle) {
-    rememberPeak(sample.rel);
+    rememberPeak(kinematics);
   }
-
-  const peak = computeSuspensionKinematics(
-    peakRelAngle,
-    travelMm,
-    suspensionSettings.maxAngleDeg
-  );
 
   const live = lastImuAt !== 0 && now - lastImuAt < LIVE_WINDOW_MS;
   const freefall = imu.accMag != null && imu.accMag < FREEFALL_G;
   const side = formatRollSide(imu.roll);
+  const model = window.BIKE_KINEMATICS[bikeModelKey] || window.BIKE_KINEMATICS.WILD_S;
 
   paintText(sagPercentEl, "sagPercent", formatTenths(kinematics.percent));
   paintText(sagMmEl, "sagMm", formatTenths(kinematics.travelMm));
-  paintText(peakValueEl, "peak", `${formatTenths(peak.percent)} % / ${formatTenths(peak.travelMm)} mm`);
+  paintText(peakValueEl, "peak", `${formatTenths(peakPercent)} % / ${formatTenths(peakTravelMm)} mm`);
+  paintText(
+    shockLengthEl,
+    "shock",
+    `${formatTenths(model.eyeToEyeMaxMm)} → ${formatTenths(kinematics.shockLengthMm)} mm`
+  );
+  paintText(deltaThetaEl, "delta", formatDegrees(kinematics.deltaTheta));
   paintText(relAngleEl, "rel", formatDegrees(sample.rel));
   paintText(absAngleEl, "abs", formatDegrees(sample.abs));
   paintText(pitchEl, "pitch", formatDegrees(imu.pitch));
@@ -948,6 +932,11 @@ function renderFrame(now) {
   paintText(accMagEl, "accMag", formatG(imu.accMag));
   paintText(packetHzEl, "hz", `${Math.round(displayHz)} Hz`);
   paintTravel(kinematics.percent);
+  updateBikeVisualization(
+    kinematics,
+    Number.isFinite(imu.pitch) ? imu.pitch : 0,
+    Number.isFinite(imu.roll) ? imu.roll : 0
+  );
 
   const sideMuted = side === "—";
   if (sideMuted !== painted.sideMuted) {
@@ -998,10 +987,64 @@ function travelBand(percent) {
   return "bottom";
 }
 
-function activeTravelMm() {
-  return suspensionSettings.element === "fork"
-    ? suspensionSettings.forkTravelMm
-    : suspensionSettings.shockTravelMm;
+function updateBikeVisualization(kinematicsData, pitchDeg, rollDeg) {
+  const delta = Number.isFinite(kinematicsData.deltaTheta) ? kinematicsData.deltaTheta : 0;
+  const model = window.BIKE_KINEMATICS[bikeModelKey] || window.BIKE_KINEMATICS.WILD_S;
+  const maxDelta = model.deltaTheta[model.deltaTheta.length - 1];
+  const deltaDraw = Math.min(Math.max(delta, 0), maxDelta);
+  const percent = Math.min(Math.max(Number.isFinite(kinematicsData.percent) ? kinematicsData.percent : 0, 0), 100);
+  const travelMm = Number.isFinite(kinematicsData.travelMm) ? kinematicsData.travelMm : 0;
+  const pitchDraw = Math.min(Math.max(pitchDeg, -30), 30);
+  const rollDraw = Math.min(Math.max(rollDeg, -45), 45);
+
+  const pitchTransform = `rotate(${(-pitchDraw).toFixed(2)} 132 248)`;
+  if (visualPose.pitch !== pitchTransform) {
+    visualPose.pitch = pitchTransform;
+    svgBikePitchGroup.setAttribute("transform", pitchTransform);
+  }
+
+  const rearTransform = `rotate(${deltaDraw.toFixed(3)} 228 156)`;
+  if (visualPose.rear !== rearTransform) {
+    visualPose.rear = rearTransform;
+    svgRearTriangle.setAttribute("transform", rearTransform);
+  }
+
+  const tip = SHOCK_TIP_EXTENDED - ((SHOCK_TIP_EXTENDED - SHOCK_TIP_COMPRESSED) * percent) / 100;
+  const tipText = tip.toFixed(2);
+  if (visualPose.shock !== tipText) {
+    visualPose.shock = tipText;
+    svgShockPiston.setAttribute("x2", tipText);
+    svgShockEye.setAttribute("cx", tipText);
+  }
+
+  const shockColor = SHOCK_COLORS[travelBand(percent)];
+  if (visualPose.shockColor !== shockColor) {
+    visualPose.shockColor = shockColor;
+    svgShockPiston.setAttribute("stroke", shockColor);
+    svgShockEye.setAttribute("fill", shockColor);
+  }
+
+  const rollTransform = `rotate(${rollDraw.toFixed(2)} 110 258)`;
+  if (visualPose.roll !== rollTransform) {
+    visualPose.roll = rollTransform;
+    svgBikeRearView.setAttribute("transform", rollTransform);
+  }
+
+  paintText(svgHudSag, "hudSag", `${formatTenths(percent)} %`);
+  paintText(svgHudMm, "hudMm", `${formatTenths(travelMm)} mm`);
+  paintText(svgHudPitch, "hudPitch", `Pitch ${formatDegrees(pitchDeg)}°`);
+  paintText(svgHudRoll, "hudRoll", `${formatDegrees(rollDeg)}°`);
+  paintText(svgHudRollSide, "hudSide", formatRollSide(rollDeg));
+}
+
+function extendedShock() {
+  const model = window.BIKE_KINEMATICS[bikeModelKey] || window.BIKE_KINEMATICS.WILD_S;
+  return {
+    travelMm: 0,
+    percent: 0,
+    shockLengthMm: model.eyeToEyeMaxMm,
+    deltaTheta: 0,
+  };
 }
 
 function paintText(node, key, text) {
@@ -1095,51 +1138,49 @@ function formatRollSide(rollDeg) {
   return rollDeg < 0 ? "IZQ" : "DER";
 }
 
-function loadSuspensionSettings() {
+function loadBikeModel() {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) {
-      return { ...DEFAULT_SETTINGS };
+    const stored = localStorage.getItem(BIKE_MODEL_KEY);
+    if (stored && window.BIKE_KINEMATICS[stored]) {
+      return stored;
     }
-
-    const parsed = JSON.parse(raw);
-    return {
-      shockTravelMm: clampNumber(parsed.shockTravelMm, DEFAULT_SETTINGS.shockTravelMm, 1, 400),
-      forkTravelMm: clampNumber(parsed.forkTravelMm, DEFAULT_SETTINGS.forkTravelMm, 1, 400),
-      maxAngleDeg: clampNumber(parsed.maxAngleDeg, DEFAULT_SETTINGS.maxAngleDeg, 0.1, 180),
-      element: parsed.element === "fork" ? "fork" : "shock",
-    };
   } catch (error) {
-    console.warn("[eSAG] No se pudieron leer los parámetros de suspensión:", error);
-    return { ...DEFAULT_SETTINGS };
+    console.warn("[eSAG] No se pudo leer el cuadro:", error);
   }
+  return "WILD_S";
 }
 
-function saveSuspensionSettings() {
+function loadSensorDirection() {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(suspensionSettings));
+    const stored = localStorage.getItem(SENSOR_DIR_KEY);
+    if (stored === "-1") {
+      return -1;
+    }
+  } catch (error) {
+    console.warn("[eSAG] No se pudo leer el sentido del sensor:", error);
+  }
+  return 1;
+}
+
+function saveBikeSettings() {
+  try {
+    localStorage.setItem(BIKE_MODEL_KEY, bikeModelKey);
+    localStorage.setItem(SENSOR_DIR_KEY, String(sensorDirection));
   } catch (error) {
     console.warn("[eSAG] No se pudieron guardar los parámetros de suspensión:", error);
   }
 }
 
-function applySettingsToForm() {
-  shockTravelInput.value = String(suspensionSettings.shockTravelMm);
-  forkTravelInput.value = String(suspensionSettings.forkTravelMm);
-  maxAngleInput.value = String(suspensionSettings.maxAngleDeg);
-
-  for (const button of elementButtons) {
-    button.setAttribute("aria-pressed", button.dataset.element === suspensionSettings.element ? "true" : "false");
+function applyBikeSettings() {
+  bikeModelSelect.replaceChildren();
+  for (const [key, model] of Object.entries(window.BIKE_KINEMATICS)) {
+    const option = document.createElement("option");
+    option.value = key;
+    option.textContent = model.name;
+    bikeModelSelect.append(option);
   }
-}
-
-function clampNumber(value, fallback, min, max) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return fallback;
-  }
-
-  return Math.min(Math.max(number, min), max);
+  bikeModelSelect.value = bikeModelKey;
+  sensorDirSelect.value = String(sensorDirection);
 }
 
 /**
